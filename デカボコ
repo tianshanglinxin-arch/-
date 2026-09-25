@@ -1,0 +1,420 @@
+local p=game.Players.LocalPlayer
+local uis=game:GetService("UserInputService")
+local rs=game:GetService("RunService")
+local cam=workspace.CurrentCamera
+local ws=workspace
+
+-- ===== 設定 =====
+local s={
+    esp=true,aim=true,autoHit=true,
+    antiFling=true,antiRagdoll=true,antiFreeze=true,
+    spd=true,jmp=true,noclip=false,fly=false,
+    god=true
+}
+local spdVal=32
+local jumpVal=100
+local bv=nil
+local cn=nil
+
+local function gR(c)
+    if not c then return end
+    for _,n in ipairs({"HumanoidRootPart","Torso","UpperTorso","Head"})do
+        local part=c:FindFirstChild(n)
+        if part and part:IsA("BasePart")then return part end
+    end
+end
+
+-- ===== 無敵 =====
+rs.RenderStepped:Connect(function()
+    if not s.god then return end
+    local c=p.Character
+    if c then
+        local h=c:FindFirstChildOfClass("Humanoid")
+        if h then h.MaxHealth=9e999 h.Health=9e999 h:BreakJointsOnDeath=false end
+    end
+end)
+p.CharacterAdded:Connect(function()
+    task.wait(0.1)
+    local c=p.Character
+    if c then
+        local h=c:FindFirstChildOfClass("Humanoid")
+        if h then h.MaxHealth=9e999 h.Health=9e999 end
+    end
+end)
+
+-- ===== アンチ系 =====
+rs.Heartbeat:Connect(function()
+    local c=p.Character
+    if not c then return end
+    local h=c:FindFirstChildOfClass("Humanoid")
+    local root=gR(c)
+    if h then
+        if s.antiFreeze then
+            if h:GetState()==Enum.HumanoidStateType.Frozen or h:GetState()==Enum.HumanoidStateType.PlatformStanding then
+                h:ChangeState(Enum.HumanoidStateType.Running)
+            end
+        end
+        if s.antiRagdoll then
+            if h:GetState()==Enum.HumanoidStateType.FallingDown or h:GetState()==Enum.HumanoidStateType.Ragdoll then
+                h:ChangeState(Enum.HumanoidStateType.GettingUp)
+            end
+        end
+        if h.PlatformStand then h.PlatformStand=false end
+    end
+    if s.antiFling and root then
+        if root.Velocity.Magnitude>200 then
+            root.Velocity=Vector3.new(0,0,0)
+        end
+    end
+end)
+
+-- ===== スピード・ジャンプ =====
+rs.Heartbeat:Connect(function()
+    local c=p.Character
+    if not c then return end
+    local h=c:FindFirstChildOfClass("Humanoid")
+    if h then
+        if s.spd then h.WalkSpeed=spdVal else h.WalkSpeed=16 end
+        if s.jmp then h.JumpPower=jumpVal else h.JumpPower=50 end
+    end
+    if s.noclip then
+        for _,part in ipairs(c:GetDescendants())do
+            if part:IsA("BasePart")then part.CanCollide=false end
+        end
+    end
+end)
+
+-- ===== ESP =====
+local es={}
+rs.RenderStepped:Connect(function()
+    if not s.esp then
+        for _,v in pairs(es)do if v then v.Visible=false end end
+        return
+    end
+    local vw=cam.ViewportSize
+    for _,pl in ipairs(game.Players:GetPlayers())do
+        if pl~=p then
+            local ch=pl.Character
+            if ch and ch:FindFirstChild("Head")then
+                local head=ch.Head
+                local pos,on=cam:WorldToScreenPoint(head.Position)
+                if on and pos.Z>0 then
+                    if not es[pl]then
+                        local txt=Drawing.new("Text")
+                        txt.Size=14 txt.Center=true txt.Outline=true txt.OutlineColor=Color3.fromRGB(0,0,0) txt.Font=3
+                        es[pl]=txt
+                    end
+                    local txt=es[pl]
+                    txt.Text=pl.Name
+                    txt.Position=Vector2.new(pos.X,pos.Y-30)
+                    txt.Color=Color3.fromRGB(100,180,255)
+                    txt.Visible=true
+                else
+                    if es[pl]then es[pl].Visible=false end
+                end
+            end
+        end
+    end
+end)
+
+-- ===== オートエイム =====
+rs.RenderStepped:Connect(function()
+    if not s.aim then return end
+    local c=p.Character
+    if not c then return end
+    local r=gR(c)
+    if not r then return end
+    local t=nil
+    local md=math.huge
+    for _,pl in ipairs(game.Players:GetPlayers())do
+        if pl~=p then
+            local ch=pl.Character
+            if ch then
+                local rr=gR(ch)
+                if rr then
+                    local d=(r.Position-rr.Position).Magnitude
+                    if d<md then md=d t=rr end
+                end
+            end
+        end
+    end
+    if t then r.CFrame=CFrame.new(r.Position,t.Position) end
+end)
+
+-- ===== オートアタック =====
+rs.Heartbeat:Connect(function()
+    if not s.autoHit then return end
+    local c=p.Character
+    if not c then return end
+    local tool=c:FindFirstChildOfClass("Tool")
+    if tool then pcall(function()tool:Activate()end)end
+end)
+
+-- ===== 飛行 =====
+local function toggleFly()
+    s.fly=not s.fly
+    local c=p.Character
+    if not c then return end
+    local r=gR(c)
+    if not r then return end
+    local h=c:FindFirstChildOfClass("Humanoid")
+    if s.fly then
+        if h then h.PlatformStand=true end
+        if bv then bv:Destroy()end
+        bv=Instance.new("BodyVelocity")
+        bv.MaxForce=Vector3.new(1,1,1)*100000
+        bv.Parent=r
+        if cn then cn:Disconnect()end
+        cn=rs.RenderStepped:Connect(function()
+            if not s.fly or not p.Character then return end
+            local rr=gR(p.Character)
+            if not rr then return end
+            local mv=Vector3.new()
+            if uis:IsKeyDown(Enum.KeyCode.W)then mv=mv+cam.CFrame.LookVector end
+            if uis:IsKeyDown(Enum.KeyCode.S)then mv=mv-cam.CFrame.LookVector end
+            if uis:IsKeyDown(Enum.KeyCode.A)then mv=mv-cam.CFrame.RightVector end
+            if uis:IsKeyDown(Enum.KeyCode.D)then mv=mv+cam.CFrame.RightVector end
+            if uis:IsKeyDown(Enum.KeyCode.Space)then mv=mv+Vector3.new(0,1,0)end
+            if uis:IsKeyDown(Enum.KeyCode.LeftControl)then mv=mv-Vector3.new(0,1,0)end
+            if mv.Magnitude>0 then mv=mv.Unit*50 end
+            bv.Velocity=mv
+        end)
+    else
+        if h then h.PlatformStand=false end
+        if bv then bv:Destroy()bv=nil end
+        if cn then cn:Disconnect()cn=nil end
+    end
+end
+
+-- ===== レム風UI =====
+local g=Instance.new("ScreenGui")
+g.Name="RemUI"
+g.ResetOnSpawn=false
+local pg=p:FindFirstChild("PlayerGui")
+if pg then g.Parent=pg else pcall(function()g.Parent=game:GetService("CoreGui")end)end
+
+-- メインフレーム
+local f=Instance.new("Frame")
+f.Size=UDim2.new(0,340,0,420)
+f.Position=UDim2.new(0.5,-170,0.5,-210)
+f.BackgroundColor3=Color3.fromRGB(240,245,255)
+f.BorderSizePixel=0
+local fc=Instance.new("UICorner")
+fc.CornerRadius=UDim.new(0,14)
+fc.Parent=f
+f.Parent=g
+
+-- 水色グラデーション
+local grad=Instance.new("UIGradient")
+grad.Color=ColorSequence.new(Color3.fromRGB(220,235,255),Color3.fromRGB(180,210,255))
+grad.Rotation=90
+grad.Parent=f
+
+-- タイトルバー
+local tb=Instance.new("Frame")
+tb.Size=UDim2.new(1,0,0,50)
+tb.BackgroundColor3=Color3.fromRGB(150,190,255)
+tb.BorderSizePixel=0
+local tbc=Instance.new("UICorner")
+tbc.CornerRadius=UDim.new(0,14)
+tbc.Parent=tb
+tb.Parent=f
+
+-- レム風アイコン
+local icon=Instance.new("TextLabel")
+icon.Size=UDim2.new(0,40,1,0)
+icon.Position=UDim2.new(0,10,0,0)
+icon.Text="❄️"
+icon.TextSize=24
+icon.BackgroundTransparency=1
+icon.Parent=tb
+
+local title=Instance.new("TextLabel")
+title.Size=UDim2.new(1,-60,1,0)
+title.Position=UDim2.new(0,55,0,0)
+title.Text="Rem PvP"
+title.TextColor3=Color3.fromRGB(255,255,255)
+title.TextSize=18
+title.Font=Enum.Font.GothamBold
+title.TextXAlignment=Enum.TextXAlignment.Left
+title.BackgroundTransparency=1
+title.Parent=tb
+
+local sub=Instance.new("TextLabel")
+sub.Size=UDim2.new(1,-60,0,16)
+sub.Position=UDim2.new(0,55,0,28)
+sub.Text="最強PvP スクリプト"
+sub.TextColor3=Color3.fromRGB(220,235,255)
+sub.TextSize=9
+sub.Font=Enum.Font.Gotham
+sub.TextXAlignment=Enum.TextXAlignment.Left
+sub.BackgroundTransparency=1
+sub.Parent=tb
+
+-- 閉じるボタン
+local cb=Instance.new("TextButton")
+cb.Size=UDim2.new(0,28,0,28)
+cb.Position=UDim2.new(1,-38,0,11)
+cb.Text="✕"
+cb.TextSize=14
+cb.BackgroundColor3=Color3.fromRGB(255,150,180)
+cb.TextColor3=Color3.fromRGB(255,255,255)
+cb.BorderSizePixel=0
+local cbc=Instance.new("UICorner")
+cbc.CornerRadius=UDim.new(0,8)
+cbc.Parent=cb
+cb.Parent=tb
+
+-- ボタンコンテナ
+local cont=Instance.new("ScrollingFrame")
+cont.Size=UDim2.new(1,-20,1,-70)
+cont.Position=UDim2.new(0,10,0,60)
+cont.BackgroundTransparency=1
+cont.BorderSizePixel=0
+cont.ScrollBarThickness=3
+cont.ScrollBarImageColor3=Color3.fromRGB(150,190,255)
+cont.Parent=f
+
+local ll=Instance.new("UIListLayout")
+ll.Padding=UDim.new(0,6)
+ll.SortOrder=Enum.SortOrder.LayoutOrder
+ll.Parent=cont
+
+-- ボタン作成
+local function mkBtn(txt,y,color,callback)
+    local b=Instance.new("TextButton")
+    b.Size=UDim2.new(1,-5,0,36)
+    b.Position=UDim2.new(0,0,0,y)
+    b.Text=txt
+    b.BackgroundColor3=color
+    b.TextColor3=Color3.fromRGB(255,255,255)
+    b.Font=Enum.Font.GothamBold
+    b.TextSize=11
+    b.BorderSizePixel=0
+    local bc=Instance.new("UICorner")
+    bc.CornerRadius=UDim.new(0,8)
+    bc.Parent=b
+    b.Parent=cont
+    b.MouseButton1Click:Connect(callback)
+    return b
+end
+
+local blue=Color3.fromRGB(100,160,255)
+local pink=Color3.fromRGB(255,150,200)
+
+local b1=mkBtn("👁 ESP: ON",0,blue,function()
+    s.esp=not s.esp
+    b1.Text="👁 ESP: "..(s.esp and "ON" or "OFF")
+    b1.BackgroundColor3=s.esp and blue or Color3.fromRGB(180,180,200)
+end)
+
+local b2=mkBtn("🎯 エイム: ON",42,blue,function()
+    s.aim=not s.aim
+    b2.Text="🎯 エイム: "..(s.aim and "ON" or "OFF")
+    b2.BackgroundColor3=s.aim and blue or Color3.fromRGB(180,180,200)
+end)
+
+local b3=mkBtn("⚔️ オートアタック: ON",84,blue,function()
+    s.autoHit=not s.autoHit
+    b3.Text="⚔️ オートアタック: "..(s.autoHit and "ON" or "OFF")
+    b3.BackgroundColor3=s.autoHit and blue or Color3.fromRGB(180,180,200)
+end)
+
+local b4=mkBtn("🛡 アンチフリング: ON",126,pink,function()
+    s.antiFling=not s.antiFling
+    b4.Text="🛡 アンチフリング: "..(s.antiFling and "ON" or "OFF")
+    b4.BackgroundColor3=s.antiFling and pink or Color3.fromRGB(180,180,200)
+end)
+
+local b5=mkBtn("🛡 アンチラグドール: ON",168,pink,function()
+    s.antiRagdoll=not s.antiRagdoll
+    b5.Text="🛡 アンチラグドール: "..(s.antiRagdoll and "ON" or "OFF")
+    b5.BackgroundColor3=s.antiRagdoll and pink or Color3.fromRGB(180,180,200)
+end)
+
+local b6=mkBtn("🛡 アンチフリーズ: ON",210,pink,function()
+    s.antiFreeze=not s.antiFreeze
+    b6.Text="🛡 アンチフリーズ: "..(s.antiFreeze and "ON" or "OFF")
+    b6.BackgroundColor3=s.antiFreeze and pink or Color3.fromRGB(180,180,200)
+end)
+
+local b7=mkBtn("🏃 スピード: ON",252,blue,function()
+    s.spd=not s.spd
+    b7.Text="🏃 スピード: "..(s.spd and "ON" or "OFF")
+    b7.BackgroundColor3=s.spd and blue or Color3.fromRGB(180,180,200)
+end)
+
+local b8=mkBtn("⬆ ジャンプ: ON",294,blue,function()
+    s.jmp=not s.jmp
+    b8.Text="⬆ ジャンプ: "..(s.jmp and "ON" or "OFF")
+    b8.BackgroundColor3=s.jmp and blue or Color3.fromRGB(180,180,200)
+end)
+
+local b9=mkBtn("🕊 飛行: OFF",336,blue,function()
+    toggleFly()
+    b9.Text="🕊 飛行: "..(s.fly and "ON" or "OFF")
+    b9.BackgroundColor3=s.fly and blue or Color3.fromRGB(180,180,200)
+end)
+
+local b10=mkBtn("🔲 壁抜け: OFF",378,blue,function()
+    s.noclip=not s.noclip
+    b10.Text="🔲 壁抜け: "..(s.noclip and "ON" or "OFF")
+    b10.BackgroundColor3=s.noclip and blue or Color3.fromRGB(180,180,200)
+end)
+
+local b11=mkBtn("🛡 無敵: ON",420,pink,function()
+    s.god=not s.god
+    b11.Text="🛡 無敵: "..(s.god and "ON" or "OFF")
+    b11.BackgroundColor3=s.god and pink or Color3.fromRGB(180,180,200)
+end)
+
+-- 開閉ボタン
+local toggleBtn=Instance.new("TextButton")
+toggleBtn.Size=UDim2.new(0,50,0,50)
+toggleBtn.Position=UDim2.new(0,10,0,10)
+toggleBtn.Text="❄️"
+toggleBtn.TextSize=24
+toggleBtn.BackgroundColor3=Color3.fromRGB(150,190,255)
+toggleBtn.TextColor3=Color3.fromRGB(255,255,255)
+toggleBtn.BorderSizePixel=0
+local toggleC=Instance.new("UICorner")
+toggleC.CornerRadius=UDim.new(1,0)
+toggleC.Parent=toggleBtn
+toggleBtn.Parent=g
+
+local vis=true
+toggleBtn.MouseButton1Click:Connect(function()
+    vis=not vis
+    f.Visible=vis
+end)
+cb.MouseButton1Click:Connect(function()
+    vis=false
+    f.Visible=false
+end)
+
+-- ドラッグ
+local drag=false
+local dx,dy,px,py
+tb.InputBegan:Connect(function(input)
+    if input.UserInputType==Enum.UserInputType.MouseButton1 then
+        drag=true dx=input.Position.X dy=input.Position.Y px=f.Position.X.Offset py=f.Position.Y.Offset
+    end
+end)
+uis.InputChanged:Connect(function(input)
+    if drag and input.UserInputType==Enum.UserInputType.MouseMovement then
+        f.Position=UDim2.new(0,px+(input.Position.X-dx),0,py+(input.Position.Y-dy))
+    end
+end)
+uis.InputEnded:Connect(function(input)
+    if input.UserInputType==Enum.UserInputType.MouseButton1 then drag=false end
+end)
+
+uis.InputBegan:Connect(function(i,gp)
+    if gp then return end
+    if i.KeyCode==Enum.KeyCode.U then
+        vis=not vis
+        f.Visible=vis
+    end
+end)
+
+print("❄️ Rem PvP起動 | Uキーで開閉")
